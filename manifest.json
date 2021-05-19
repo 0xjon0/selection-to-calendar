@@ -1,0 +1,25 @@
+{
+	"manifest_version": 2,
+	"name": "Selection to Google Calendar",
+	"version": "1.0",
+
+	"description": "Send event info in selected text to Google Calendar.",
+	"icons": {
+		"64": "icon.png"
+	},
+
+	"browser_specific_settings": {
+		"gecko": {
+			"id": "albert.tomanek@gmail.com"
+		}
+	},
+
+	"permissions": [
+        "contextMenus",
+		"tabs"
+	],
+
+	"background": {
+		"scripts": ["background.js", "URI.min.js"]
+	}
+}
