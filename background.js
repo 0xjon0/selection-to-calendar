@@ -24,29 +24,40 @@ browser.contextMenus.onClicked.addListener((ctx, tab) => {
     if (ctx.menuItemId == "add-selection-to-calendar")
     {
         var info = parse_info(ctx.selectionText, tab);
+        
+        if (! info['start-date']) {
+            // See if it says the name of the day
+            console.log(ctx.selectionText, deduce_date(ctx.selectionText));
+            var date = deduce_date(ctx.selectionText);
+            
+            if (date != undefined) {
+                info["start-date"] = date;
+            }
+            else {
+                // Otherwise, complain.
+                // var alert_code = `alert("No date found in selection.")`;     // Nope, doesnt work.
+                // browser.tabs.executeScript({code : alert_code});
+                return;
+            }
+        }
+      
         console.log(info);
 
-        if (!("start-date" in info)) {
-            // var alert_code = `alert("No date found in selection.")`;     // Nope, doesnt work.
-            // browser.tabs.executeScript({code : alert_code});
+        if (!('start-time' in info)) {
+            console.log("No start time found. Assuming whole day.");
+            info['start-time'] = '00:01';
+            info['end-time']   = '23:59';
         }
-        else {
-            if (!('start-time' in info)) {
-                console.log("No start time found. Assuming whole day.");
-                info['start-time'] = '00:01';
-                info['end-time']   = '23:59';
-            }
-            else if (!('end-time' in info)) {
-                var end = info['start-time'];
-                // end.hour += 1;
-                info['end-time'] = end;
-            }
-
-            var url  = get_calendar_url(info, ctx.selectionText);
-
-            console.log('Sending user to: ' + url);
-            browser.windows.create({'url': url, 'type': 'popup'});
+        else if (!('end-time' in info)) {
+            var end = info['start-time'];
+            // end.hour += 1;
+            info['end-time'] = end;
         }
+
+        var url  = get_calendar_url(info, ctx.selectionText);
+
+        console.log('Sending user to: ' + url);
+        browser.windows.create({'url': url, 'type': 'popup'});
     }
 });
 
@@ -96,8 +107,19 @@ const MONTHS = {
     "listopadu": 11,
     "prosince": 12,
 };
-
 let MONTH_NAMES = Object.keys(MONTHS).join('|');
+
+const DAYS = {
+    "monday": 1,
+    "tuesday": 2,
+    "wednesday": 3,
+    "thursday": 4,
+    "friday": 5,
+    "saturday": 6,
+    "sunday": 7,
+};
+let DAY_NAMES = Object.keys(DAYS).join('|');
+
 let ORDINALS = 'st|nd|rd|th';
 
 const DAY = (new Date).getUTCDate();
@@ -170,6 +192,43 @@ function extract_times(text)
     }
 
     return times;
+}
+
+function deduce_date(text)
+{
+    var pat = new RegExp('((on)|(next) )?('+DAY_NAMES+'|today|tomorrow) at', 'gi');
+
+    var match = pat.exec(text.toLowerCase());
+    var d = new Date;
+
+    if (match == null) {
+        return undefined;
+    }
+
+    if (match[4] == 'today') {
+    }
+    else if (match[4] == 'tomorrow') {
+        d.setDate(d.getDate() + 1);
+    }
+    else if (match[4] == undefined) {
+        return undefined;
+    }
+    else {
+        var now_idx = d.getDay();
+        var then_idx = DAYS[match[4]];
+
+        if (then_idx < now_idx) {   // If it's a wednesday and the text says 'on wednesday', we assume it's today.
+            then_idx += 7;
+        }
+
+        d.setDate(d.getDate() + (then_idx - now_idx));
+    }
+
+    if (match[3] == 'next') {
+        d.setDate(d.getDate() + 7);     // next wednesday as opposed to on wednesday etc.
+    }
+
+    return { year: d.getUTCFullYear(), month: d.getMonth() + 1, day: d.getDate() };
 }
 
 function parse_info(text, tab)
