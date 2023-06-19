@@ -1,7 +1,7 @@
 {
 	"manifest_version": 2,
 	"name": "Selection to Google Calendar",
-	"version": "1.0",
+	"version": "1.1",
 
 	"description": "Send event info in selected text to Google Calendar.",
 	"icons": {

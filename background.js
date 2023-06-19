@@ -1,18 +1,53 @@
+/* Test text:
+20/06
+19.00
+
+3rd Oct
+
+June 5, 2023 
+25. 06.
+3.04.
+
+30.4.2022
+30/04/2022
+
+23.00, 1.30 pm, 2 pm, 6.30, 06:45
+*/
+
 browser.contextMenus.create({	// https://developer.chrome.com/docs/extensions/reference/contextMenus/#method-create
 	id: 'add-selection-to-calendar',
 	title: 'Send selection to Calendar',
 	contexts: ['selection'],
 });
 
-browser.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === "add-selection-to-calendar") {
-		var info = parse_info(info.selectionText, tab);
-		console.log(info);
-	    var url  = get_calendar_url(info);
+browser.contextMenus.onClicked.addListener((ctx, tab) => {
+    if (ctx.menuItemId == "add-selection-to-calendar")
+    {
+        var info = parse_info(ctx.selectionText, tab);
+        console.log(info);
 
-		console.log('Sending user to: ' + url);
-		browser.windows.create({'url': url, 'type': 'popup'});
-	}
+        if (!("start-date" in info)) {
+            // var alert_code = `alert("No date found in selection.")`;     // Nope, doesnt work.
+            // browser.tabs.executeScript({code : alert_code});
+        }
+        else {
+            if (!('start-time' in info)) {
+                console.log("No start time found. Assuming whole day.");
+                info['start-time'] = '00:01';
+                info['end-time']   = '23:59';
+            }
+            else if (!('end-time' in info)) {
+                var end = info['start-time'];
+                // end.hour += 1;
+                info['end-time'] = end;
+            }
+
+            var url  = get_calendar_url(info, ctx.selectionText);
+
+            console.log('Sending user to: ' + url);
+            browser.windows.create({'url': url, 'type': 'popup'});
+        }
+    }
 });
 
 // Time
@@ -21,7 +56,8 @@ browser.contextMenus.onClicked.addListener((info, tab) => {
 // Date
 // ([0-9]?[0-9][\.\/][0-9]?[0-9]([\.\/][0-9][0-9][0-9][0-9])?)|(([0-9]?[0-9])[\s\.,]+(oct|october)( [0-9][0-9][0-9][0-9])?)|((oct|october)[\s\.,]+([0-9]?[0-9]))
 
-const months = {
+const MONTHS = {
+    // English
     "january": 1,
     "jan": 1,
     "february": 2,
@@ -45,66 +81,104 @@ const months = {
     "nov": 11,
     "december": 12,
     "dec": 12,
+
+    // Czech
+    "ledna": 1,
+    "února": 2,
+    "března": 3,
+    "dubna": 4,
+    "května": 5,
+    "června": 6,
+    "července": 7,
+    "srpna": 8,
+    "září": 9,
+    "října": 10,
+    "listopadu": 11,
+    "prosince": 12,
 };
 
-let month_names = Object.keys(months).join('|');
-let ordinals = 'st|nd|rd|th';
+let MONTH_NAMES = Object.keys(MONTHS).join('|');
+let ORDINALS = 'st|nd|rd|th';
 
-let ex_time = new RegExp('(([0-9]?[0-9])([\.:]([0-9][0-9]))?\\s?(AM|PM))|(([0-9]?[0-9])[\.:]([0-9][0-9]))', 'gi');
-let ex_date = new RegExp('(([0-9]?[0-9])[\.\/]([0-9]?[0-9])([\.\/]([0-9][0-9][0-9][0-9]))?)|(([0-9]?[0-9])('+ordinals+')?[\\s\.,]+('+month_names+')( [0-9][0-9][0-9][0-9])?)|(('+month_names+')[\\s\.,]+([0-9]?[0-9])('+ordinals+')?)|(today|tomorrow)', 'gi');
+const DAY = (new Date).getUTCDate();
+const MONTH = (new Date).getMonth() + 1;
+const YEAR = (new Date).getUTCFullYear();
+
+const date_templates = [
+    {
+        pat: /(?<!\d)(\d{1,2})\.\s?(\d{1,2})\.(\d{4})?/gi,         // 23.6.2016, 1.6.
+        unpack: (match) => { return { year: match[3] ? parseInt(match[3]) : YEAR , month: parseInt(match[2]), day: parseInt(match[1]) }; }
+    },
+    {
+        pat: /(?<!\d)(\d{2})\/((0|1)\d)(\/(\d{4}))?/gi,         // 23/6/2016, 03/06
+        unpack: (match) => { return { year: match[4] ? parseInt(match[5]) : YEAR , month: parseInt(match[2]), day: parseInt(match[1]) }; }
+    },
+    {
+        pat: RegExp('([0-9]?[0-9])(\.|'+ORDINALS+')? ('+MONTH_NAMES+')( \d{4})?', 'gi'),         // 12. Oct, 12th Oct 2004
+        unpack: (match) => { return { year: match[4] ? parseInt(match[4]) : YEAR , month: MONTHS[match[3]], day: parseInt(match[1]) }; }
+    },  // FIXME: Both will match `Oct 12th Oct`. Use `(?<!\$)`?
+    {
+        pat: RegExp('('+MONTH_NAMES+') ([0-9]?[0-9])(\.|'+ORDINALS+')?,?( \d{4})?', 'gi'),         // Oct 12th, 12th Oct 2004
+        unpack: (match) => { return { year: match[4] ? parseInt(match[4]) : YEAR , month: MONTHS[match[1]], day: parseInt(match[2]) }; }
+    },
+];
+
+const time_templates = [
+    {
+        pat: /(?<!\d|\.|:)(\d{1,2})\s?(am|pm)/gi,         // 2pm, 2 pm
+        unpack: (match) => {
+            var hour_add = (match[2] == 'pm' && match[1] != 12) ? 12 : 0;
+            return { hour: parseInt(match[1]) + hour_add, minute: 0 };
+        }
+    },
+    {
+        pat: /(?<!\d)(\d{1,2})((\.|:)(\d{2}))(\s?(am|pm))?(?!\.|\d)/gi,         // 23.00, 1.30 pm, 6.30, 06:45
+        unpack: (match) => {
+            var hour_add = (match[6] == 'pm' && match[1] != 12) ? 12 : 0;
+            return { hour: parseInt(match[1]) + hour_add, minute: parseInt(match[4]) };
+        }
+    },
+];
+
+function extract_dates(text)
+{
+    var dates = [];
+
+    for (const templ of date_templates)
+    {
+        var match;
+        while (match = templ.pat.exec(text.toLowerCase()))
+        {
+            dates.push(templ.unpack(match));
+        }
+    }
+    
+    return dates;
+}
+
+function extract_times(text)
+{
+    var times = [];
+    
+    for (const templ of time_templates)
+    {
+        var match;
+        while (match = templ.pat.exec(text.toLowerCase()))
+        {
+            times.push(templ.unpack(match));
+        }
+    }
+
+    return times;
+}
 
 function parse_info(text, tab)
 {
-    text = text.toLowerCase();
+    var dates = extract_dates(text);
+    var times = extract_times(text);
 
-    var times = [];
-    var dates = [];
-
-    for (groups = []; (groups = ex_time.exec(text)) !== null;) {
-        if (groups[1] !== undefined) {
-            /* Analog time */
-            var hour = (groups[5] !== undefined ? groups[5] : '').toUpperCase() == 'AM' ? groups[2] : (parseInt(groups[2]) + 12).toString();
-            var minute = groups[4] == undefined ? '00' : groups[4];
-            times.push(`${hour}:${minute}`);
-        }
-        else if (groups[6] !== undefined) {
-            times.push(groups[6]);
-        }
-    }
-
-    for (groups = []; (groups = ex_date.exec(text)) !== null;) {
-        // console.log(`Found ${groups}. Next starts at ${ex_date.lastIndex}.`);
-        var day = (new Date).getUTCDate();
-        var month = (new Date).getMonth() + 1;
-        var year = (new Date).getUTCFullYear();
-
-        if (groups[1] !== undefined) {
-            day   = parseInt(groups[2]);
-            month = parseInt(groups[3]);
-            year  = parseInt(groups[5]);
-        }
-        else if (groups[6] !== undefined) {
-            day   = parseInt(groups[7]);
-            month = months[groups[9]];
-            if (groups[9] !== undefined) {
-                year = parseInt(groups[10]);
-            }
-        }
-        else if (groups[11] !== undefined) {
-            month = months[groups[12]];
-			day   = parseInt(groups[13]);
-        }
-		else if (groups[15] !== undefined) {
-			var d = new Date();
-			if (groups[15] == 'tomorrow') {
-				d.setUTCDate(d.getUTCDate() + 1);
-			}
-
-			day   = d.getUTCDate();
-		}
-
-        dates.push(`${year}-${month}-${day}`);
-    }
+    console.log("dates: ", dates);
+    console.log("times: ", times);
 
     var info = {
         "start-time": times[0],
@@ -122,25 +196,17 @@ function parse_info(text, tab)
 }
 
 function to_google_time(date, time) {
-    var dt = new Date(date + ' ' + time);
+    var dt = new Date(`${date.year}-${date.month}-${date.day} ${time.hour}:${time.minute}`);
     return dt.getUTCFullYear().toString() + (dt.getMonth() + 1).toString().padStart(2, "0") + dt.getDate().toString().padStart(2, "0") + "T"
         + dt.getHours().toString().padStart(2, "0") + dt.getMinutes().toString().padStart(2, "0") + dt.getSeconds().toString().padStart(2, "0") + "H";
 }
 
-function get_calendar_url(info) {
-	if (!('start-time' in info)) {
-		info['start-time'] = '00:01';
-		info['end-time']   = '23:59';
-	}
-	else if (!('end-time' in info)) {
-		info['end-time'] = info['start-time'];
-	}
-
+function get_calendar_url(info, selection_text) {
     var uri = new URI('https://www.google.com/calendar/render');
     uri.search({
         action:   'TEMPLATE',
         text:     info['title'],
-        details:  info['webpage'],
+        details:  info['webpage'] + '\n\n' + selection_text,
         location: info['online'] ? 'online' : '',
         dates:    to_google_time(info['start-date'], info['start-time']) + '/' + to_google_time(info['start-date'], info['end-time'])
     });
