@@ -1,3 +1,5 @@
+// URI.js comes from: https://github.com/medialize/URI.js/blob/b655c1b972111ade9f181b02374305942e68e30a/src/URI.js
+
 /* Test text:
 20/06
 19.00
