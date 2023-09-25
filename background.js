@@ -43,18 +43,18 @@ browser.contextMenus.onClicked.addListener((ctx, tab) => {
             }
         }
       
-        console.log(info);
-
-        if (!('start-time' in info)) {
+        if (!('start-time' in info) || info['start-time'] == undefined) {
             console.log("No start time found. Assuming whole day.");
-            info['start-time'] = '00:01';
-            info['end-time']   = '23:59';
+            info['start-time'] = { hour:  0, minute:  1 };
+            info['end-time']   = { hour: 23, minute: 59 };
         }
-        else if (!('end-time' in info)) {
+        else if (!('end-time' in info) || info['end-time'] == undefined) {
             var end = info['start-time'];
             // end.hour += 1;
             info['end-time'] = end;
         }
+
+        console.log(info);
 
         var url  = get_calendar_url(info, ctx.selectionText);
 
