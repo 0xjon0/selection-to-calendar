@@ -2,3 +2,4 @@ I forked this with the intention of contributing and packaging, but then found h
 
 # Potential changes to make
 - Adjust logic to only populate the date into the future. Sometimes the text will contain a reference to a past event which confuses the extension into using a date in the past.
+   - ...and sometimes it picks an incorrect date in the past for no discernible reason.
